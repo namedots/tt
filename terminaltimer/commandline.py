@@ -2,10 +2,11 @@
 Launch daemon (daemon exits if already running) and open a message channel.
 This is a dumb front-end to provide access to the daemon.
 """
-from .settings import URL
+
+from terminaltimer.settings import URL
 import daemon
 import os
-import readline
+import readline  # NOQA importing directly modifies input()
 import zmq
 
 
@@ -30,6 +31,6 @@ def main():
 def spawn_daemon():
     if os.fork() == 0:
         with daemon.DaemonContext():
-            from .daemon import main as daemon_main
+            from terminaltimer.daemon import main as daemon_main
             daemon_main()
     os.wait()
