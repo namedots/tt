@@ -1,28 +1,29 @@
-from terminaltimer.settings import URL
 import datetime
 import uuid
 import zmq
 
 
-def dispatch(msg, respond):
+def dispatch(msg, timers):
     if msg == 'add':
         finish = datetime.datetime.now() + datetime.timedelta(hours=1)
-        add_timer('dummy timer', finish)
-        respond('added')
+        add_timer('dummy timer', finish, timers)
+        return 'added'
     elif msg[:3] == 'del':
-        remove_timer(msg[4:])
-        respond('removed')
+        remove_timer(msg[4:], timers)
+        return 'removed'
     elif msg == 'list':
-        respond(list_timers())
+        return list_timers(timers)
     else:
-        respond('unknown command')
+        return 'unknown command'
 
 
-def main():
+def main(URL):
     # acquire socket or crash if already in use
     ctx = zmq.Context.instance()
     s = ctx.socket(zmq.REP)
     s.bind(URL)
+
+    timers = {}
 
     # main loop
     #   - Check incoming messages on socket
@@ -30,26 +31,23 @@ def main():
     while True:
         if s.poll(timeout=500):
             incoming = s.recv().decode()
-            outgoing = dispatch(incoming)
+            outgoing = dispatch(incoming, timers)
             s.send(outgoing.encode())
         check_timers()
 
 
-timers = {}
-
-
-def remove_timer(identity):
+def remove_timer(identity, timers):
     del timers[identity]
 
 
-def list_timers():
+def list_timers(timers):
     result = []
     for identity, timer in timers.items():
         result.append([identity, timer.description, timer.finish_time])
     return str(result)
 
 
-def add_timer(description, finish_time):
+def add_timer(description, finish_time, timers):
     timer = Timer(description, finish_time)
     timers[timer.identity] = timer
 
@@ -94,4 +92,6 @@ def save():
 
 
 if __name__ == '__main__':
-    main()
+    # FIXME get the url from somewhere other than a circular import
+    from terminaltimer.commandline import URL
+    main(URL)
