@@ -5,9 +5,11 @@ This is a dumb front-end to provide access to the daemon.
 
 import daemon
 import os
-import readline  # NOQA importing directly modifies input()
 import zmq
 
+# importing directly modifies input() to behave like a shell's input with
+# emacs/vi bindings etc for editing and history
+import readline  # NOQA
 
 URL = 'ipc://@TerminalTimer'
 
@@ -18,17 +20,23 @@ def main():
     ctx = zmq.Context.instance()
     s = ctx.socket(zmq.REQ)
     s.connect(URL)
-    s.send('status'.encode())
+
+    msg = ''
+    s.send(b'hello')  # it's only polite.
 
     while True:
         response = s.recv()
-        print(response.decode())
+        response = response.decode()
+        if response != '':
+            print(response)
+        if response == 'bye.':
+            break
+
         try:
             msg = input("> ").encode()
         except EOFError:
             break
         s.send(msg)
-
 
 def spawn_daemon():
     if os.fork() == 0:
