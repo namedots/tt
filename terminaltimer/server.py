@@ -1,7 +1,8 @@
+import daemon
 import datetime
+import json
 import os
 import re
-import sys
 import threading
 import time
 import uuid
@@ -12,18 +13,24 @@ def dispatch(msg, timers):
     # TODO: possibly register with decorator instead
     # don't know what requirements are, probably best to just wait until more
     # functionally complete or just risk having to undo it
-    if msg[:3] == 'add':
-        return add_timer(msg, timers)
-    elif msg[:3] == 'del':
-        return remove_timer(msg, timers)
-    elif msg == 'list':
+    if msg:
+        cmd, *args = msg.split()
+    else:
+        cmd = ''
+        args = []
+
+    if cmd == 'add':
+        return add_timer(args, timers)
+    elif cmd == 'describe':
+        return describe_timer(args, timers)
+    elif cmd == 'remove':
+        return remove_timer(args, timers)
+    elif cmd == 'list':
         return list_timers(timers)
-    elif msg == 'hello':
-        return ''
-    elif msg == '':
+    elif cmd == '':
         return ''
     else:
-        return 'unknown command'
+        return f'{cmd}: unknown command'
 
 
 def alarm(alarm_active):
@@ -35,14 +42,29 @@ def alarm(alarm_active):
             # run from a daemon for whatever reason. ffmpeg is therefore used
             # as a transcoder from ogg to wav, and then fed to aplay, which,
             # unlike paplay, produces sound when run from a daemon
+            # FIXME: send text output to /dev/null
             for _ in range(2):
                 os.popen('ffmpeg'
                          '   -i /usr/share/sounds/freedesktop/stereo/bell.oga'
                          '   -f wav'
                          '   -'
-                         ' | aplay --quiet')
+                         '   2> /dev/null'
+                         ' | aplay --quiet 2> /dev/null')
                 time.sleep(0.2)
             time.sleep(2)
+
+
+def check_expired(alarm_active, expired_timers):
+    expired_summary = ''
+    if expired_timers:
+        expired_summary = '\n'.join((
+            [t.finish_time.strftime('%F %T') +
+             ' : ' + t.description
+             for t in expired_timers])) + '\n'
+        expired_summary += '---- end of expired timers summary ----'
+        expired_timers.clear()
+        alarm_active.clear()
+    return expired_summary
 
 
 def main(URL):
@@ -65,25 +87,19 @@ def main(URL):
         if socket.poll(timeout=500):
             # read and process requests
             incoming = socket.recv().decode()
+            print('client>', incoming)
             if incoming in ['exit', 'bye', 'quit']:
                 socket.send(b'bye.')
-                sys.exit()  # alarm thread seems to continue if using break
-            outgoing = dispatch(incoming, timers)
-
-            # prepare a summary of expired timers
-            expired_summary = ''
-            if expired_timers:
-                expired_timers = (
-                    [t.finish_time.strftime('%Y-%m-%d %H:%M:%S') +
-                     ' | ' + t.description
-                     for t in expired_timers])
-                expired_summary = '\n'.join(expired_timers) + '\n'
-                expired_summary += '---- end of expired timers summary ----\n'
-                expired_timers.clear()
                 alarm_active.clear()
+                break
+            if incoming == '':
+                outgoing = check_expired(alarm_active, expired_timers)
+            else:
+                outgoing = dispatch(incoming, timers)
+            print('server>', outgoing)
 
             # send reply
-            socket.send((expired_summary + outgoing).encode())
+            socket.send(outgoing.encode())
 
         # regardless of whether there was a reply, check for expired timers
         expired_timers += check_timers(timers)
@@ -91,11 +107,21 @@ def main(URL):
             alarm_active.set()
 
 
-def remove_timer(msg, timers):
-    args = msg.split(' ')
-    if len(args) != 2:
-        return f'bad command (this is a bug):\n{msg}'
-    command, identity = args
+def describe_timer(args, timers):
+    if len(args) < 1:
+        return 'expected at least 1 argument'
+    description = ' '.join(args[1:])
+    identity = args[0]
+    if identity in timers:
+        timers[identity].description = description
+        return 'updated'
+    return 'that timer doesn\'t exist.'
+
+
+def remove_timer(args, timers):
+    if len(args) != 1:
+        return 'expected 1 argument'
+    identity = args[0]
     if identity in timers:
         del timers[identity]
         return 'removed'
@@ -105,8 +131,10 @@ def remove_timer(msg, timers):
 def list_timers(timers):
     result = []
     for identity, timer in timers.items():
-        result.append([identity, timer.description, timer.finish_time])
-    return str(result)
+        result.append([identity,
+                       timer.description,
+                       timer.finish_time.timestamp()])
+    return json.dumps(result)
 
 
 def parse_time_description(finish):
@@ -128,12 +156,10 @@ def parse_time_description(finish):
     return None
 
 
-def add_timer(msg, timers):
-    # todo parse duration/finish
-    args = msg.split(' ')
-    if len(args) < 2:
-        return f'expected at least two arguments'
-    command, finish, *description = args
+def add_timer(args, timers):
+    if len(args) < 1:
+        return f'expected at least one argument'
+    finish, *description = args
     description = ' '.join(description)
     finish_time = parse_time_description(finish)
     if finish_time is None:
@@ -187,7 +213,14 @@ def save():
     raise NotImplementedError()
 
 
+def spawn_daemon(URL):
+    if os.fork() == 0:
+        with daemon.DaemonContext():
+            main(URL)
+    os.wait()
+
+
 if __name__ == '__main__':
     # FIXME get the url from somewhere other than a circular import
-    from terminaltimer.commandline import URL
+    from .client import URL
     main(URL)
