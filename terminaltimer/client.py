@@ -31,8 +31,8 @@ def command(command_name):
     return decorator
 
 
-@command('help')
 @command('?')
+@command('help')
 def show_help(socket):
     output = """
     list
@@ -52,22 +52,24 @@ def list_timers(socket):
     socket.send(b'list')
     response = socket.recv()
     data = json.loads(response)
+    # sort by finish time, with earliest finish time showing up at the bottom
+    data.sort(key=lambda x: x[2], reverse=True)
     output = []
     list_timers.remember = remember = {}
     for n, [identity, description, finish_time] in enumerate(data, start=1):
+        remember[str(n)] = identity
         finish_time = datetime.datetime.fromtimestamp(finish_time)
         finish_str = finish_time.strftime('%F %T')
         duration = finish_time - datetime.datetime.now()
         duration_str = str(duration)
-        remember[str(n)] = identity
         output.append(f'{n}) {description}\n'
-                      f'{finish_str}   remaining: {duration_str}')
+                      f'{finish_str}   ({duration_str})')
     if output:
-        print('\n\n'.join(output))
+        print('\n'.join(output))
 
 
-@command('describe')
 @command('desc')
+@command('describe')
 def describe(socket, which_timer, *description):
     description = ' '.join(description)
     identity = get_identity(which_timer)
@@ -80,6 +82,7 @@ def describe(socket, which_timer, *description):
 
 @command('del')
 @command('remove')
+@command('rm')
 def remove_timer(socket, which_timer):
     identity = get_identity(which_timer)
     if not identity:
@@ -126,6 +129,9 @@ def main():
             msg = input("> ")
         except EOFError:
             break
+        except KeyboardInterrupt:
+            print('^C')
+            continue
 
         if msg:
             cmd, *args = msg.split()
