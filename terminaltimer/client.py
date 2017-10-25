@@ -8,9 +8,13 @@ import zmq
 
 # importing directly modifies input() to behave like a shell's input with
 # emacs/vi bindings etc for editing and history
+# TODO: it may be possible to have tab-completion for commands
 import readline  # NOQA
 
 URL = 'ipc://@TerminalTimer'
+if hasattr(sys, 'real_prefix'):
+    URL = 'ipc://@TerminalTimerVEnv'
+
 COMMANDS = {}
 
 
@@ -84,6 +88,8 @@ def describe(socket, which_timer, *description):
 @command('remove')
 @command('rm')
 def remove_timer(socket, which_timer):
+    # TODO: strategy for removing multiple timers at once
+    # by enumerated number? by description? by ranges? by expiry?
     identity = get_identity(which_timer)
     if not identity:
         return
@@ -105,18 +111,14 @@ def get_identity(which_timer):
 
 def main():
     server.spawn_daemon(URL)
+    # TODO option for starting daemon and exiting
+    # or just run it as: echo | terminaltimer
+    # (feed it empty input, causing it to exit at EOF)
 
     # connect to daemon
     ctx = zmq.Context.instance()
     socket = ctx.socket(zmq.REQ)
     socket.connect(URL)
-
-    # one-off commands through arguments
-    if len(sys.argv) > 1:
-        args = sys.argv[1:]
-        socket.send(' '.join(args).encode())
-        take_response(socket)
-        sys.exit()
 
     # poke the daemon to see if it has something to say or do before the user
     # types anything in the interactive loop
@@ -124,33 +126,41 @@ def main():
     take_response(socket)
 
     # interactive loop
-    while True:
-        try:
-            msg = input("> ")
-        except EOFError:
-            break
-        except KeyboardInterrupt:
-            print('^C')
-            continue
+    keep_running = True
+    while keep_running:
+        # one-off commands through arguments
+        if len(sys.argv) > 1:
+            user_input = ' '.join(sys.argv[1:])
+            keep_running = False
+        else:
+            try:
+                user_input = input("> ")
+            except EOFError:
+                print()
+                break
+            except KeyboardInterrupt:
+                print('^C')
+                continue
 
-        if msg:
-            cmd, *args = msg.split()
+        if user_input:
+            cmd, *args = user_input.split()
         else:
             cmd = ''
             args = []
         if cmd in COMMANDS:
-            args = msg.split()[1:]
+            args = user_input.split()[1:]
             handler = COMMANDS[cmd]
             handler(socket, *args)
         else:
-            socket.send(msg.encode())
+            socket.send(user_input.encode())
             take_response(socket)
 
 
 def take_response(s):
     response = s.recv()
     response = response.decode()
-    if response != '':
+    if response == 'bye.':
+        print('daemon is exiting (alarms will not go off)')
+        sys.exit()
+    elif response != '':
         print(response)
-        if response == 'bye.':
-            sys.exit()

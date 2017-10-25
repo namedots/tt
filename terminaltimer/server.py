@@ -146,12 +146,13 @@ def parse_time_description(finish):
         's': datetime.timedelta(seconds=1),
     }
     if re.match(r'(?i)^(\d+(?:y|d|w|h|m|s))+$', finish):
-        result = datetime.datetime.now()
+        duration = datetime.timedelta(0)
         split_finish = re.findall(r'(?i)(\d+)(y|d|w|h|m|s)', finish)
         for amount, unit in split_finish:
             amount = int(amount)
-            result += amount * time_units[unit]
-        return result
+            duration += amount * time_units[unit]
+        finish_time = datetime.datetime.now() + duration
+        return (duration, finish_time)
     # TODO: add absolute time i.e. 12:37
     return None
 
@@ -161,36 +162,28 @@ def add_timer(args, timers):
         return f'expected at least one argument'
     finish, *description = args
     description = ' '.join(description)
-    finish_time = parse_time_description(finish)
+    duration, finish_time = parse_time_description(finish)
     if finish_time is None:
         return 'bad time format'
     timer = Timer(description, finish_time)
     timers[timer.identity] = timer
-    return 'added'
 
-
-def identity_dispenser():
-    # uuid1 doesn't guarantee no collisions when multiple are generated at the
-    # same time on the same machine, and while uuid1 supports 100ns time
-    # resolution steps, the time used might not be as fine-grained.
-    # therefore, wait until the time has changed before generating next one.
-    # obviously this still isn't multithread/multiprocess safe.
-    if not hasattr(identity_dispenser, 'previous'):
-        identity_dispenser.previous = None
-    while datetime.datetime.now() == identity_dispenser.previous:
-        pass
-    identity = str(uuid.uuid1())
-    identity_dispenser.previous = datetime.datetime.now()
-    return identity
+    if description:
+        description += '\n'
+    return (
+        f'{description}'
+        f'duration: {duration}\n'
+        f'finishes at: {finish_time}'
+    )
 
 
 class Timer:
-    # other threads shouldn't interact with this, they just need to be able to
-    # add/list/remove
     def __init__(self, description, finish_time):
         self.description = description
         self.finish_time = finish_time
-        self.identity = identity_dispenser()
+        # uuid.uuid1 ensures that its timestamp is increased by at least 1 when
+        # called by single thread/process
+        self.identity = str(uuid.uuid1())
 
 
 def check_timers(timers):
@@ -222,5 +215,5 @@ def spawn_daemon(URL):
 
 if __name__ == '__main__':
     # FIXME get the url from somewhere other than a circular import
-    from .client import URL
+    from terminaltimer.client import URL
     main(URL)
