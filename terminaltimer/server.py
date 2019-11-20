@@ -49,7 +49,7 @@ def alarm(alarm_active):
                          '   -f wav'
                          '   -'
                          '   2> /dev/null'
-                         ' | aplay --quiet 2> /dev/null')
+                         ' | aplay -f cd --quiet 2> /dev/null')
                 time.sleep(0.2)
             time.sleep(2)
 
@@ -154,7 +154,7 @@ def parse_time_description(finish):
         finish_time = datetime.datetime.now() + duration
         return (duration, finish_time)
     # TODO: add absolute time i.e. 12:37
-    return None
+    return None, None
 
 
 def add_timer(args, timers):
@@ -170,10 +170,14 @@ def add_timer(args, timers):
 
     if description:
         description += '\n'
+    time_str = finish_time.strftime('%F %T')
+    # round seconds to integer to hide microseconds
+    dura_str = (
+        str(datetime.timedelta(seconds=round(duration.total_seconds()))))
     return (
         f'{description}'
-        f'duration: {duration}\n'
-        f'finishes at: {finish_time}'
+        f'duration: {dura_str}\n'
+        f'finishes at: {time_str}'
     )
 
 

@@ -20,8 +20,8 @@ COMMANDS = {}
 
 def command(command_name):
     def decorator(f):
-        num_args = len(inspect.getargspec(f).args) - 1
-        has_varargs = inspect.getargspec(f).varargs is not None
+        num_args = len(inspect.getfullargspec(f).args) - 1
+        has_varargs = inspect.getfullargspec(f).varargs is not None
 
         @functools.wraps(f)
         def wrapper(socket, *args):
@@ -126,12 +126,16 @@ def main():
     take_response(socket)
 
     # interactive loop
+    initial = True
     keep_running = True
     while keep_running:
         # one-off commands through arguments
         if len(sys.argv) > 1:
             user_input = ' '.join(sys.argv[1:])
             keep_running = False
+        elif initial:
+            initial = False
+            user_input = 'ls'
         else:
             try:
                 user_input = input("> ")
@@ -164,3 +168,7 @@ def take_response(s):
         sys.exit()
     elif response != '':
         print(response)
+
+
+if __name__ == '__main__':
+    main()
