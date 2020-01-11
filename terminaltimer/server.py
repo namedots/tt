@@ -3,6 +3,7 @@ import datetime
 import json
 import os
 import re
+import subprocess
 import threading
 import time
 import uuid
@@ -44,13 +45,16 @@ def alarm(alarm_active):
             # unlike paplay, produces sound when run from a daemon
             # FIXME: send text output to /dev/null
             for _ in range(2):
-                os.popen('ffmpeg'
-                         '   -i /usr/share/sounds/freedesktop/stereo/bell.oga'
-                         '   -f wav'
-                         '   -'
-                         '   2> /dev/null'
-                         ' | aplay -f cd --quiet 2> /dev/null')
-                time.sleep(0.2)
+                subprocess.call(
+                    'ffmpeg'
+                    '   -i /usr/share/sounds/freedesktop/stereo/bell.oga'
+                    '   -f wav'
+                    '   -'
+                    '   2> /dev/null'
+                    ' | aplay -f cd --quiet 2> /dev/null',
+                    shell=True
+                )
+                # time.sleep(0.2)
             time.sleep(2)
 
 
